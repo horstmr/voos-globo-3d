@@ -261,21 +261,26 @@
 
     let currentYear = null;
     let currentType = null;
+    let currentAirport = null;
     let spinning = true;
 
     const airportList = Object.entries(AP).map(([code, [lng, lat]]) => ({
-      id: code,
-      name: code,
-      lat,
-      lng,
+      id: code, name: code, lat, lng,
       color: code === 'CWB' ? '#ffd166' : '#62e4ff'
     }));
+
+    function apColor(code) {
+      if (code === currentAirport) return '#ff6b35';
+      if (code === 'CWB') return '#ffd166';
+      return '#62e4ff';
+    }
 
     function getRoutes() {
       const routes = new Map();
       FL.filter(f => {
         if (currentYear !== null && f.y !== currentYear) return false;
         if (currentType && f.t !== currentType) return false;
+        if (currentAirport && f.o !== currentAirport && f.d !== currentAirport) return false;
         return true;
       }).forEach(f => {
         if (!AP[f.o] || !AP[f.d]) return;
@@ -284,16 +289,24 @@
           const [lng1, lat1] = AP[f.o];
           const [lng2, lat2] = AP[f.d];
           routes.set(key, {
-            startLat: lat1,
-            startLng: lng1,
-            endLat: lat2,
-            endLng: lng2,
+            startLat: lat1, startLng: lng1,
+            endLat: lat2, endLng: lng2,
             color: colorMap[f.t] || '#62e4ff',
-            name: `${f.o} → ${f.d}`
+            name: `${f.o} → ${f.d}`,
+            tipo: f.t,
+            years: [f.y]
           });
+        } else {
+          const r = routes.get(key);
+          if (!r.years.includes(f.y)) r.years.push(f.y);
         }
       });
-      return Array.from(routes.values());
+      return Array.from(routes.values()).map(r => {
+        r.years.sort((a,b)=>a-b);
+        const yearsStr = currentYear ? '' : ` · ${r.years.join(', ')}`;
+        r.arcLabel = `<div class="globe-tooltip"><strong>${r.name}</strong><br><span style="color:#aeb9c8;font-size:10px">${r.tipo}${yearsStr}</span></div>`;
+        return r;
+      });
     }
 
     const globe = Globe()
@@ -310,9 +323,17 @@
       .pointRadius(0.14)
       .pointResolution(12)
       .pointColor('color')
-      .pointLabel(p => `<div class="globe-tooltip"><strong>${p.id}</strong></div>`)
+      .pointLabel(p => {
+        const sel = currentAirport === p.id;
+        return `<div class="globe-tooltip"><strong>${p.id}</strong><br><span style="color:${sel?'#ff6b35':'#aeb9c8'};font-size:10px">${sel?'✕ clique para limpar':'clique para filtrar'}</span></div>`;
+      })
+      .onPointClick(p => {
+        currentAirport = currentAirport === p.id ? null : p.id;
+        updateGlobe();
+      })
       .arcsData(getRoutes())
       .arcColor('color')
+      .arcLabel('arcLabel')
       .arcDashLength(0.4)
       .arcDashGap(0.15)
       .arcDashAnimateTime(2200)
@@ -345,17 +366,25 @@
 
     function updateGlobe() {
       const routes = getRoutes();
+      airportList.forEach(a => { a.color = apColor(a.id); });
+
       const airports = new Set(routes.flatMap(r => [
         airportList.find(a => a.lat === r.startLat && a.lng === r.startLng)?.id,
         airportList.find(a => a.lat === r.endLat && a.lng === r.endLng)?.id
       ]).filter(Boolean));
 
-      globe.arcsData(routes);
+      globe.arcsData(routes).pointsData([...airportList]);
       document.querySelector('#metric-routes').textContent = routes.length;
       document.querySelector('#metric-airports').textContent = airports.size;
       document.querySelector('#metric-year').textContent = currentYear ?? 'Todos';
-      document.querySelector('#selected-title').textContent = currentYear ? `${currentYear}` : 'Rede global (2007–2026)';
-      document.querySelector('#selected-copy').textContent = `${airports.size} aeroportos · ${routes.length} rotas`;
+
+      if (currentAirport) {
+        document.querySelector('#selected-title').textContent = `${currentAirport} — rotas`;
+        document.querySelector('#selected-copy').textContent = `${routes.length} rotas · anos: ${[...new Set(FL.filter(f=>f.o===currentAirport||f.d===currentAirport).map(f=>f.y))].sort().join(', ')}`;
+      } else {
+        document.querySelector('#selected-title').textContent = currentYear ? `${currentYear}` : 'Rede global (2007–2026)';
+        document.querySelector('#selected-copy').textContent = `${airports.size} aeroportos · ${routes.length} rotas`;
+      }
     }
 
     const spinBtn = document.querySelector('#toggle-spin');
@@ -372,6 +401,13 @@
 
     window.addEventListener('resize', () => {
       globe.width(window.innerWidth).height(window.innerHeight);
+    });
+
+    window.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && currentAirport) {
+        currentAirport = null;
+        updateGlobe();
+      }
     });
 
     globe.width(window.innerWidth).height(window.innerHeight);
