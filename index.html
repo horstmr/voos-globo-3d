@@ -259,7 +259,7 @@
       'América do Sul': '#ffb347'
     };
 
-    let currentYear = 2017;
+    let currentYear = null;
     let currentType = null;
     let spinning = true;
 
@@ -274,7 +274,7 @@
     function getRoutes() {
       const routes = new Map();
       FL.filter(f => {
-        if (f.y !== currentYear) return false;
+        if (currentYear !== null && f.y !== currentYear) return false;
         if (currentType && f.t !== currentType) return false;
         return true;
       }).forEach(f => {
@@ -328,19 +328,19 @@
     globe.controls().maxDistance = 480;
 
     const selector = document.querySelector('#year-selector');
+    // opção "Todos os anos" já existe no HTML como value=""
+    selector.options[0].textContent = 'Todos os anos';
+    selector.options[0].selected = true;
     for (let y = 2007; y <= 2026; y++) {
       const option = document.createElement('option');
       option.value = y;
       option.textContent = y;
-      if (y === currentYear) option.selected = true;
       selector.appendChild(option);
     }
 
     selector.addEventListener('change', (e) => {
-      if (e.target.value) {
-        currentYear = parseInt(e.target.value);
-        updateGlobe();
-      }
+      currentYear = e.target.value ? parseInt(e.target.value) : null;
+      updateGlobe();
     });
 
     function updateGlobe() {
@@ -353,8 +353,8 @@
       globe.arcsData(routes);
       document.querySelector('#metric-routes').textContent = routes.length;
       document.querySelector('#metric-airports').textContent = airports.size;
-      document.querySelector('#metric-year').textContent = currentYear;
-      document.querySelector('#selected-title').textContent = `${currentYear}`;
+      document.querySelector('#metric-year').textContent = currentYear ?? 'Todos';
+      document.querySelector('#selected-title').textContent = currentYear ? `${currentYear}` : 'Rede global (2007–2026)';
       document.querySelector('#selected-copy').textContent = `${airports.size} aeroportos · ${routes.length} rotas`;
     }
 
