@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Globo 3D Interativo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05070b;
+      --panel: rgba(10, 14, 22, 0.72);
+      --line: rgba(255, 255, 255, 0.16);
+      --text: #f7f3e8;
+      --muted: #aeb9c8;
+      --cyan: #62e4ff;
+      --green: #8df2ad;
+      --gold: #ffd166;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+    }
+
+    #globe {
+      position: fixed;
+      inset: 0;
+      cursor: grab;
+    }
+
+    #globe:active {
+      cursor: grabbing;
+    }
+
+    .hud {
+      position: fixed;
+      left: clamp(18px, 4vw, 56px);
+      top: clamp(18px, 4vw, 48px);
+      width: min(380px, calc(100vw - 36px));
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 11ch;
+      font-size: clamp(42px, 8vw, 82px);
+      line-height: 0.94;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      margin: 18px 0 0;
+      max-width: 34rem;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 22px;
+      pointer-events: auto;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 14px;
+      color: var(--text);
+      background: var(--panel);
+      font: inherit;
+      font-size: 14px;
+      backdrop-filter: blur(16px);
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    button:hover,
+    button.active {
+      border-color: rgba(98, 228, 255, 0.72);
+      background: rgba(16, 28, 40, 0.78);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .status {
+      position: fixed;
+      right: clamp(14px, 3vw, 38px);
+      bottom: clamp(14px, 3vw, 34px);
+      width: min(330px, calc(100vw - 28px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      z-index: 2;
+    }
+
+    .status strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: var(--green);
+    }
+
+    .status span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .metric {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+      min-width: 0;
+    }
+
+    .metric b {
+      display: block;
+      color: var(--gold);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .metric small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .hint {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%);
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: rgba(247, 243, 232, 0.84);
+      background: rgba(5, 7, 11, 0.52);
+      backdrop-filter: blur(12px);
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .globe-tooltip {
+      padding: 8px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      background: rgba(5, 7, 11, 0.86);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.35;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+    }
+
+    @media (max-width: 720px) {
+      .hud {
+        top: 16px;
+      }
+
+      h1 {
+        font-size: 42px;
+      }
+
+      .lede {
+        display: none;
+      }
+
+      .controls {
+        margin-top: 14px;
+      }
+
+      button {
+        min-height: 38px;
+        padding: 0 11px;
+        font-size: 13px;
+      }
+
+      .status {
+        display: none;
+      }
+
+      .hint {
+        width: max-content;
+        max-width: calc(100vw - 28px);
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="globe" aria-label="Globo 3D interativo"></main>
+
+  <section class="hud" aria-label="Controles do globo">
+    <h1>Globo 3D</h1>
+    <p class="lede">Visual leve em WebGL inspirado no projeto open-source Globe.GL: arraste para girar, role para aproximar e clique nos pontos para focar rotas.</p>
+    <div class="controls">
+      <button id="toggle-spin" class="active" type="button">Auto-giro</button>
+      <button id="focus-br" type="button">Brasil</button>
+      <button id="focus-world" type="button">Visao global</button>
+    </div>
+  </section>
+
+  <aside class="status" aria-live="polite">
+    <strong id="selected-title">Rede global</strong>
+    <span id="selected-copy">Clique em uma cidade para destacar conexoes. Os arcos usam animacao curta para manter o canvas fluido.</span>
+    <div class="metric-row">
+      <div class="metric">
+        <b>7</b>
+        <small>pontos</small>
+      </div>
+      <div class="metric">
+        <b>8</b>
+        <small>rotas</small>
+      </div>
+      <div class="metric">
+        <b>WebGL</b>
+        <small>render</small>
+      </div>
+    </div>
+  </aside>
+
+  <div class="hint">Arraste para girar · scroll/pinca para zoom</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/globe.gl"></script>
+  <script>
+    const places = [
+      { id: 'sp', name: 'Sao Paulo', lat: -23.5505, lng: -46.6333, color: '#8df2ad' },
+      { id: 'nyc', name: 'Nova York', lat: 40.7128, lng: -74.006, color: '#62e4ff' },
+      { id: 'lon', name: 'Londres', lat: 51.5072, lng: -0.1276, color: '#ffd166' },
+      { id: 'tok', name: 'Toquio', lat: 35.6762, lng: 139.6503, color: '#ff7aa2' },
+      { id: 'syd', name: 'Sydney', lat: -33.8688, lng: 151.2093, color: '#8ab4ff' },
+      { id: 'cpt', name: 'Cidade do Cabo', lat: -33.9249, lng: 18.4241, color: '#d7ff66' },
+      { id: 'dub', name: 'Dubai', lat: 25.2048, lng: 55.2708, color: '#ff9f66' }
+    ];
+
+    const links = [
+      ['sp', 'nyc'], ['sp', 'lon'], ['sp', 'cpt'], ['sp', 'tok'],
+      ['nyc', 'lon'], ['lon', 'dub'], ['dub', 'tok'], ['tok', 'syd']
+    ].map(([start, end]) => {
+      const a = places.find(place => place.id === start);
+      const b = places.find(place => place.id === end);
+      return {
+        startLat: a.lat,
+        startLng: a.lng,
+        endLat: b.lat,
+        endLng: b.lng,
+        color: [a.color, b.color],
+        name: `${a.name} -> ${b.name}`
+      };
+    });
+
+    const selectedTitle = document.querySelector('#selected-title');
+    const selectedCopy = document.querySelector('#selected-copy');
+    const spinButton = document.querySelector('#toggle-spin');
+    let spinning = true;
+
+    const globe = Globe()
+      .backgroundColor('rgba(0,0,0,0)')
+      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+      .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+      .showAtmosphere(true)
+      .atmosphereColor('#62e4ff')
+      .atmosphereAltitude(0.16)
+      .pointsData(places)
+      .pointLat('lat')
+      .pointLng('lng')
+      .pointAltitude(0.035)
+      .pointRadius(0.36)
+      .pointResolution(18)
+      .pointColor('color')
+      .pointLabel(point => `<div class="globe-tooltip"><strong>${point.name}</strong><br>clique para focar</div>`)
+      .arcsData(links)
+      .arcColor('color')
+      .arcDashLength(0.42)
+      .arcDashGap(0.18)
+      .arcDashAnimateTime(2600)
+      .arcAltitudeAutoScale(0.34)
+      .arcStroke(0.72)
+      .arcLabel(arc => `<div class="globe-tooltip">${arc.name}</div>`)
+      .ringsData([])
+      .ringColor(place => place.color)
+      .ringMaxRadius(5)
+      .ringPropagationSpeed(1.8)
+      .ringRepeatPeriod(950)
+      .onPointClick(focusPlace)
+      (document.querySelector('#globe'));
+
+    globe.controls().autoRotate = true;
+    globe.controls().autoRotateSpeed = 0.42;
+    globe.controls().enableDamping = true;
+    globe.controls().dampingFactor = 0.08;
+    globe.controls().minDistance = 160;
+    globe.controls().maxDistance = 520;
+
+    function focusPlace(place) {
+      selectedTitle.textContent = place.name;
+      selectedCopy.textContent = `Coordenadas ${place.lat.toFixed(2)}, ${place.lng.toFixed(2)}. O globo aproxima com transicao suave e mantem zoom/rotacao livres.`;
+      globe.ringsData([place]);
+      globe.pointOfView({ lat: place.lat, lng: place.lng, altitude: 1.65 }, 900);
+      setTimeout(() => globe.ringsData([]), 1600);
+    }
+
+    function resizeGlobe() {
+      globe.width(window.innerWidth).height(window.innerHeight);
+    }
+
+    spinButton.addEventListener('click', () => {
+      spinning = !spinning;
+      globe.controls().autoRotate = spinning;
+      spinButton.classList.toggle('active', spinning);
+    });
+
+    document.querySelector('#focus-br').addEventListener('click', () => {
+      focusPlace(places[0]);
+    });
+
+    document.querySelector('#focus-world').addEventListener('click', () => {
+      selectedTitle.textContent = 'Rede global';
+      selectedCopy.textContent = 'Clique em uma cidade para destacar conexoes. Os arcos usam animacao curta para manter o canvas fluido.';
+      globe.ringsData([]);
+      globe.pointOfView({ lat: 18, lng: -34, altitude: 2.45 }, 900);
+    });
+
+    window.addEventListener('resize', resizeGlobe);
+    resizeGlobe();
+    globe.pointOfView({ lat: 18, lng: -34, altitude: 2.45 }, 0);
+  </script>
+</body>
+</html>
