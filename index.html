@@ -181,28 +181,51 @@
       box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
     }
 
+    /* ── Timeline ──────────────────────────────────────── */
+    .tl-year {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(100px, 20vw, 200px);
+      font-weight: 900;
+      letter-spacing: -6px;
+      color: rgba(98,228,255,0.10);
+      pointer-events: none;
+      z-index: 1;
+      user-select: none;
+      transition: color 0.4s;
+    }
+    @keyframes yearBurst {
+      0%   { color: rgba(98,228,255,0.85); text-shadow: 0 0 80px rgba(98,228,255,0.6); transform: scale(1.18); }
+      60%  { color: rgba(98,228,255,0.20); text-shadow: none; transform: scale(1.02); }
+      100% { color: rgba(98,228,255,0.10); transform: scale(1); }
+    }
+    .tl-year.burst { animation: yearBurst 0.7s cubic-bezier(.22,1,.36,1) forwards; }
+
+    .tl-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      z-index: 4;
+      display: none;
+    }
+    .tl-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #62e4ff, #8df2ad);
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+    button.tl-btn { min-width: 110px; }
+
     @media (max-width: 720px) {
-      h1 {
-        font-size: 42px;
-      }
-
-      .lede {
-        display: none;
-      }
-
-      .controls {
-        margin-top: 10px;
-      }
-
-      button, select {
-        min-height: 36px;
-        padding: 0 10px;
-        font-size: 12px;
-      }
-
-      .status {
-        display: none;
-      }
+      h1 { font-size: 42px; }
+      .lede { display: none; }
+      .controls { margin-top: 10px; }
+      button, select { min-height: 36px; padding: 0 10px; font-size: 12px; }
+      .status { display: none; }
     }
   </style>
 </head>
@@ -218,8 +241,17 @@
       </select>
       <button id="toggle-spin" class="active" type="button">Auto-giro ON</button>
       <button id="reset-view" type="button">Resetar câmera</button>
+      <button id="tl-btn" class="tl-btn" type="button">▶ Timeline</button>
+      <select id="tl-speed">
+        <option value="2500">Lento</option>
+        <option value="1500" selected>Normal</option>
+        <option value="700">Rápido</option>
+      </select>
     </div>
   </section>
+
+  <div class="tl-year" id="tl-year" aria-hidden="true"></div>
+  <div class="tl-bar" id="tl-bar"><div class="tl-bar-fill" id="tl-fill"></div></div>
 
   <aside class="status" aria-live="polite">
     <strong id="selected-title">Rede global</strong>
@@ -416,10 +448,101 @@
     });
 
     window.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && currentAirport) {
-        currentAirport = null;
-        updateGlobe();
+      if (e.key === 'Escape') {
+        if (tlActive) stopTimeline();
+        else if (currentAirport) { currentAirport = null; updateGlobe(); }
       }
+    });
+
+    /* ── TIMELINE ──────────────────────────────────────── */
+    const TL_FIRST = 2007, TL_LAST = 2026;
+    let tlActive = false, tlTimer = null, tlYear = TL_FIRST;
+    const tlBtn   = document.querySelector('#tl-btn');
+    const tlSpeed = document.querySelector('#tl-speed');
+    const tlYearEl= document.querySelector('#tl-year');
+    const tlBar   = document.querySelector('#tl-bar');
+    const tlFill  = document.querySelector('#tl-fill');
+
+    function tlSetYear(y, burst=true) {
+      tlYear = y;
+      currentYear = y;
+      selector.value = y;
+      tlYearEl.textContent = y;
+      if (burst) {
+        tlYearEl.classList.remove('burst');
+        void tlYearEl.offsetWidth; // reflow para reiniciar animação
+        tlYearEl.classList.add('burst');
+      }
+      const pct = ((y - TL_FIRST) / (TL_LAST - TL_FIRST)) * 100;
+      tlFill.style.width = pct + '%';
+      globe.arcDashAnimateTime(400);
+      updateGlobe();
+      setTimeout(() => globe.arcDashAnimateTime(2200), 500);
+    }
+
+    function startTimeline() {
+      tlActive = true;
+      tlBtn.textContent = '⏸ Pausar';
+      tlBtn.classList.add('active');
+      tlBar.style.display = 'block';
+      tlYearEl.style.display = 'flex';
+      globe.controls().autoRotate = true;
+      tlSetYear(TL_FIRST, true);
+      scheduleNext();
+    }
+
+    function scheduleNext() {
+      const speed = parseInt(tlSpeed.value);
+      tlTimer = setTimeout(() => {
+        if (!tlActive) return;
+        if (tlYear >= TL_LAST) { finishTimeline(); return; }
+        tlSetYear(tlYear + 1, true);
+        scheduleNext();
+      }, speed);
+    }
+
+    function pauseTimeline() {
+      clearTimeout(tlTimer);
+      tlActive = false;
+      tlBtn.textContent = '▶ Retomar';
+      tlBtn.classList.remove('active');
+    }
+
+    function resumeTimeline() {
+      tlActive = true;
+      tlBtn.textContent = '⏸ Pausar';
+      tlBtn.classList.add('active');
+      scheduleNext();
+    }
+
+    function finishTimeline() {
+      clearTimeout(tlTimer);
+      tlActive = false;
+      tlBtn.textContent = '↺ Repetir';
+      tlBtn.classList.remove('active');
+    }
+
+    function stopTimeline() {
+      clearTimeout(tlTimer);
+      tlActive = false;
+      tlBar.style.display = 'none';
+      tlYearEl.style.display = 'none';
+      tlYearEl.textContent = '';
+      tlFill.style.width = '0%';
+      tlBtn.textContent = '▶ Timeline';
+      tlBtn.classList.remove('active');
+      currentYear = null;
+      selector.value = '';
+      globe.arcDashAnimateTime(2200);
+      updateGlobe();
+    }
+
+    tlBtn.addEventListener('click', () => {
+      const label = tlBtn.textContent;
+      if (label.includes('Timeline')) startTimeline();
+      else if (label.includes('Pausar'))  pauseTimeline();
+      else if (label.includes('Retomar')) resumeTimeline();
+      else if (label.includes('Repetir')) { stopTimeline(); setTimeout(startTimeline, 50); }
     });
 
     globe.width(window.innerWidth).height(window.innerHeight);
