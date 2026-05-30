@@ -276,7 +276,8 @@
     }
 
     function getRoutes() {
-      const routes = new Map();
+      // 1ª passagem: agrupa por rota DIRECIONAL (A→B ≠ B→A)
+      const dir = new Map();
       FL.filter(f => {
         if (currentYear !== null && f.y !== currentYear) return false;
         if (currentType && f.t !== currentType) return false;
@@ -284,28 +285,41 @@
         return true;
       }).forEach(f => {
         if (!AP[f.o] || !AP[f.d]) return;
-        const key = [f.o, f.d].sort().join('-');
-        if (!routes.has(key)) {
-          const [lng1, lat1] = AP[f.o];
-          const [lng2, lat2] = AP[f.d];
-          routes.set(key, {
-            startLat: lat1, startLng: lng1,
-            endLat: lat2, endLng: lng2,
-            color: colorMap[f.t] || '#62e4ff',
-            name: `${f.o} → ${f.d}`,
-            tipo: f.t,
-            years: [f.y]
-          });
+        const key = `${f.o}→${f.d}`;
+        if (!dir.has(key)) {
+          dir.set(key, { o: f.o, d: f.d, tipo: f.t, years: [f.y] });
         } else {
-          const r = routes.get(key);
+          const r = dir.get(key);
           if (!r.years.includes(f.y)) r.years.push(f.y);
         }
       });
-      return Array.from(routes.values()).map(r => {
-        r.years.sort((a,b)=>a-b);
-        const yearsStr = currentYear ? '' : ` · ${r.years.join(', ')}`;
-        r.arcLabel = `<div class="globe-tooltip"><strong>${r.name}</strong><br><span style="color:#aeb9c8;font-size:10px">${r.tipo}${yearsStr}</span></div>`;
-        return r;
+
+      // 2ª passagem: conta quantos arcos existem por par não-direcional
+      // e escala a altitude para separá-los visualmente
+      const pairCount = new Map();
+      const ALT  = [0.28, 0.48, 0.65]; // baixo → alto para 1º, 2º, 3º arco
+      const STRK = [0.55, 0.45, 0.38];
+
+      return Array.from(dir.values()).map(({ o, d, tipo, years }) => {
+        const pair = [o, d].sort().join('-');
+        const idx  = pairCount.get(pair) ?? 0;
+        pairCount.set(pair, idx + 1);
+
+        const [lng1, lat1] = AP[o];
+        const [lng2, lat2] = AP[d];
+        years.sort((a,b) => a-b);
+        const yearsStr = currentYear ? '' : ` · ${years.join(', ')}`;
+
+        return {
+          startLat: lat1, startLng: lng1,
+          endLat:   lat2, endLng:   lng2,
+          color:    colorMap[tipo] || '#62e4ff',
+          name:     `${o} → ${d}`,
+          tipo, years,
+          altScale: ALT[Math.min(idx, ALT.length - 1)],
+          stroke:   STRK[Math.min(idx, STRK.length - 1)],
+          arcLabel: `<div class="globe-tooltip"><strong>${o} → ${d}</strong><br><span style="color:#aeb9c8;font-size:10px">${tipo}${yearsStr}</span></div>`
+        };
       });
     }
 
@@ -337,8 +351,8 @@
       .arcDashLength(0.4)
       .arcDashGap(0.15)
       .arcDashAnimateTime(2200)
-      .arcAltitudeAutoScale(0.3)
-      .arcStroke(0.5)
+      .arcAltitudeAutoScale('altScale')
+      .arcStroke('stroke')
       (document.querySelector('#globe'));
 
     globe.controls().autoRotate = true;
