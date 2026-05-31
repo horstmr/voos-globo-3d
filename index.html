@@ -242,6 +242,7 @@
       <button id="toggle-spin" class="active" type="button">Auto-giro ON</button>
       <button id="reset-view" type="button">Resetar câmera</button>
       <button id="tl-btn" class="tl-btn" type="button">▶ Timeline</button>
+      <button id="vv-btn" class="tl-btn" type="button">✈ Voo a Voo</button>
       <select id="tl-speed">
         <option value="2500">Lento</option>
         <option value="1500" selected>Normal</option>
@@ -449,7 +450,8 @@
 
     window.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
-        if (tlActive) stopTimeline();
+        if (vvActive)         stopVV();
+        else if (tlActive)    stopTimeline();
         else if (currentAirport) { currentAirport = null; updateGlobe(); }
       }
     });
@@ -544,6 +546,124 @@
       else if (label.includes('Retomar')) resumeTimeline();
       else if (label.includes('Repetir')) { stopTimeline(); setTimeout(startTimeline, 50); }
     });
+
+    /* ── VOO A VOO ─────────────────────────────────────────────────────────────
+       BLOCO INDEPENDENTE — para remover: apagar daqui até "FIM VOO A VOO"
+       e remover o botão #vv-btn do HTML.
+    ────────────────────────────────────────────────────────────────────────── */
+    function vvDtKey(f) {
+      const s = (f.dt || '').replace(/^~/,'');
+      const M = {Jan:1,Fev:2,Mar:3,Abr:4,Mai:5,Jun:6,Jul:7,Ago:8,Set:9,Out:10,Nov:11,Dez:12};
+      const full = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (full) return +full[3]*10000 + +full[2]*100 + +full[1];
+      const mon  = s.match(/^([A-Za-z]+)\/(\d{4})$/);
+      if (mon)  return +mon[2]*10000 + (M[mon[1]]||6)*100 + 15;
+      return (f.y||0)*10000;
+    }
+
+    const FL_VV = [...FL]
+      .filter(f => AP[f.o] && AP[f.d])
+      .sort((a,b) => vvDtKey(a) - vvDtKey(b));
+
+    let vvActive = false, vvPaused = false, vvIdx = 0, vvTimer = null;
+    const vvBtn = document.querySelector('#vv-btn');
+
+    function vvMidpoint(lat1, lng1, lat2, lng2) {
+      let dLng = lng2 - lng1;
+      if (dLng >  180) dLng -= 360;
+      if (dLng < -180) dLng += 360;
+      return { lat: (lat1+lat2)/2, lng: lng1 + dLng/2 };
+    }
+
+    function vvAlt(lat1, lng1, lat2, lng2) {
+      const d = Math.sqrt((lat2-lat1)**2 + (lng2-lng1)**2);
+      return d > 90 ? 2.1 : d > 40 ? 1.4 : 0.9;
+    }
+
+    function vvShow(idx) {
+      const f   = FL_VV[idx];
+      const [lng1,lat1] = AP[f.o];
+      const [lng2,lat2] = AP[f.d];
+
+      // 1 único arco, branco, animado
+      const arc = [{
+        startLat:lat1, startLng:lng1,
+        endLat:lat2,   endLng:lng2,
+        color:'#ffffff',
+        altScale: vvAlt(lat1,lng1,lat2,lng2) > 1.4 ? 0.55 : 0.38,
+        stroke: 1.1,
+        arcLabel:`<div class="globe-tooltip"><strong>${f.o} → ${f.d}</strong><br><span style="color:#aeb9c8;font-size:10px">${f.dt||f.y}</span></div>`
+      }];
+
+      airportList.forEach(a => {
+        a.color = (a.id===f.o||a.id===f.d) ? '#ff6b35' : '#1e2a3a';
+      });
+
+      globe.arcDashAnimateTime(500)
+           .arcsData(arc)
+           .pointsData([...airportList]);
+      setTimeout(() => globe.arcDashAnimateTime(2200), 700);
+
+      // Camera segue o voo
+      const camSpeed = Math.max(700, parseInt(tlSpeed.value) * 0.7);
+      const {lat:mLat, lng:mLng} = vvMidpoint(lat1,lng1,lat2,lng2);
+      globe.pointOfView({ lat:mLat, lng:mLng, altitude: vvAlt(lat1,lng1,lat2,lng2) }, camSpeed);
+
+      // Status
+      document.querySelector('#selected-title').textContent = `${f.o}  →  ${f.d}`;
+      document.querySelector('#selected-copy').textContent  = f.dt || String(f.y);
+      document.querySelector('#metric-routes').textContent  = `${idx+1}/${FL_VV.length}`;
+      document.querySelector('#metric-airports').textContent= f.cia||'';
+      document.querySelector('#metric-year').textContent    = f.y;
+    }
+
+    function vvSchedule() {
+      const spd = Math.max(1200, parseInt(tlSpeed.value) * 1.1);
+      vvTimer = setTimeout(() => {
+        if (!vvActive || vvPaused) return;
+        vvIdx++;
+        if (vvIdx >= FL_VV.length) { stopVV(); return; }
+        vvShow(vvIdx);
+        vvSchedule();
+      }, spd);
+    }
+
+    function startVV() {
+      if (tlActive) stopTimeline();
+      vvActive = true; vvPaused = false; vvIdx = 0;
+      vvBtn.textContent = '⏸ Pausar'; vvBtn.classList.add('active');
+      globe.controls().autoRotate = false;
+      tlBar.style.display = 'block';
+      tlYearEl.style.display = 'none';
+      vvShow(0);
+      vvSchedule();
+    }
+
+    function stopVV() {
+      clearTimeout(vvTimer);
+      vvActive = false; vvPaused = false;
+      vvBtn.textContent = '✈ Voo a Voo'; vvBtn.classList.remove('active');
+      tlBar.style.display = 'none'; tlFill.style.width = '0%';
+      airportList.forEach(a => { a.color = apColor(a.id); });
+      globe.arcDashAnimateTime(2200);
+      currentYear = null; selector.value = '';
+      updateGlobe();
+      globe.pointOfView({ lat:-15, lng:-45, altitude:2.1 }, 1200);
+    }
+
+    vvBtn.addEventListener('click', () => {
+      const t = vvBtn.textContent;
+      if (t.includes('Voo a Voo')) startVV();
+      else if (t.includes('Pausar')) {
+        vvPaused = true; clearTimeout(vvTimer);
+        vvBtn.textContent = '▶ Retomar'; vvBtn.classList.remove('active');
+      } else if (t.includes('Retomar')) {
+        vvPaused = false;
+        vvBtn.textContent = '⏸ Pausar'; vvBtn.classList.add('active');
+        vvSchedule();
+      }
+    });
+    /* FIM VOO A VOO ──────────────────────────────────────────────────────── */
 
     globe.width(window.innerWidth).height(window.innerHeight);
     globe.pointOfView({ lat: -15, lng: -45, altitude: 2.1 }, 0);
