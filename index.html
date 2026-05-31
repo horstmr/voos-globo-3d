@@ -566,6 +566,7 @@
       .sort((a,b) => vvDtKey(a) - vvDtKey(b));
 
     let vvActive = false, vvPaused = false, vvIdx = 0, vvTimer = null;
+    let vvShown = []; // arcos acumulados
     const vvBtn = document.querySelector('#vv-btn');
 
     function vvMidpoint(lat1, lng1, lat2, lng2) {
@@ -581,39 +582,53 @@
     }
 
     function vvShow(idx) {
-      const f   = FL_VV[idx];
-      const [lng1,lat1] = AP[f.o];
-      const [lng2,lat2] = AP[f.d];
+      const f = FL_VV[idx];
+      vvShown.push(f);
 
-      // 1 único arco, branco, animado
-      const arc = [{
-        startLat:lat1, startLng:lng1,
-        endLat:lat2,   endLng:lng2,
-        color:'#ffffff',
-        altScale: vvAlt(lat1,lng1,lat2,lng2) > 1.4 ? 0.55 : 0.38,
-        stroke: 1.1,
-        arcLabel:`<div class="globe-tooltip"><strong>${f.o} → ${f.d}</strong><br><span style="color:#aeb9c8;font-size:10px">${f.dt||f.y}</span></div>`
-      }];
+      const [lng2c, lat2c] = AP[f.d]; // destino atual
 
-      airportList.forEach(a => {
-        a.color = (a.id===f.o||a.id===f.d) ? '#ff6b35' : '#1e2a3a';
+      // Constrói todos os arcos acumulados
+      const arcs = vvShown.map((flight, i) => {
+        const [lg1,lt1] = AP[flight.o];
+        const [lg2,lt2] = AP[flight.d];
+        const isCur = (i === vvShown.length - 1);
+        return {
+          startLat:lt1, startLng:lg1,
+          endLat:lt2,   endLng:lg2,
+          color:    colorMap[flight.t] || '#62e4ff',
+          altScale: isCur ? 0.48 : 0.28,
+          stroke:   isCur ? 1.0  : 0.38,
+          arcLabel: `<div class="globe-tooltip"><strong>${flight.o} → ${flight.d}</strong><br><span style="color:#aeb9c8;font-size:10px">${flight.dt||flight.y}</span></div>`
+        };
       });
 
-      globe.arcDashAnimateTime(500)
-           .arcsData(arc)
-           .pointsData([...airportList]);
-      setTimeout(() => globe.arcDashAnimateTime(2200), 700);
+      // Aeroportos: visitados = cyan, atual = laranja, restantes = escuro
+      const visited = new Set(vvShown.flatMap(fl => [fl.o, fl.d]));
+      airportList.forEach(a => {
+        a.color = (a.id===f.o||a.id===f.d) ? '#ff6b35'
+                : visited.has(a.id)         ? apColor(a.id)
+                : '#111827';
+      });
 
-      // Camera segue o voo
-      const camSpeed = Math.max(700, parseInt(tlSpeed.value) * 0.7);
-      const {lat:mLat, lng:mLng} = vvMidpoint(lat1,lng1,lat2,lng2);
-      globe.pointOfView({ lat:mLat, lng:mLng, altitude: vvAlt(lat1,lng1,lat2,lng2) }, camSpeed);
+      globe.arcDashAnimateTime(450)
+           .arcsData(arcs)
+           .pointsData([...airportList]);
+      setTimeout(() => globe.arcDashAnimateTime(2200), 600);
+
+      // Barra de progresso
+      tlFill.style.width = (idx / FL_VV.length * 100) + '%';
+
+      // Camera segue o voo atual
+      const [lng1,lat1] = AP[f.o];
+      const {lat:mLat,lng:mLng} = vvMidpoint(lat1,lng1,lat2c,lng2c);
+      const camSpd = Math.max(700, parseInt(tlSpeed.value) * 0.65);
+      globe.pointOfView({ lat:mLat, lng:mLng, altitude: vvAlt(lat1,lng1,lat2c,lng2c) }, camSpd);
 
       // Status
       document.querySelector('#selected-title').textContent = `${f.o}  →  ${f.d}`;
       document.querySelector('#selected-copy').textContent  = f.dt || String(f.y);
       document.querySelector('#metric-routes').textContent  = `${idx+1}/${FL_VV.length}`;
-      document.querySelector('#metric-airports').textContent= f.cia||'';
+      document.querySelector('#metric-airports').textContent= f.cia || '';
       document.querySelector('#metric-year').textContent    = f.y;
     }
 
@@ -631,6 +646,7 @@
     function startVV() {
       if (tlActive) stopTimeline();
       vvActive = true; vvPaused = false; vvIdx = 0;
+      vvShown = []; // zera acumulador
       vvBtn.textContent = '⏸ Pausar'; vvBtn.classList.add('active');
       globe.controls().autoRotate = false;
       tlBar.style.display = 'block';
